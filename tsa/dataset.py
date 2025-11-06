@@ -11,8 +11,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
-from export.lobster_toolkit.core.builder import LOBSTERDataBuilder
-
 try:  # Hydra may not be installed in minimal environments
     from hydra.utils import to_absolute_path as _to_absolute_path
 except ImportError:  # pragma: no cover
@@ -162,6 +160,15 @@ class LOBSTERTimeSeriesDataset(object):
         shuffle_train: bool = False,
         prefer_val_split: bool = True,
     ) -> None:
+        try:
+            from export.lobster_toolkit.core.builder import LOBSTERDataBuilder as _LOBSTERDataBuilder
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "LOBSTERTimeSeriesDataset 需要可用的 export.lobster_toolkit 模块。"
+                "请在相关环境中安装或检出该项目后再使用此数据集。"
+            ) from exc
+
+        self._builder_cls = _LOBSTERDataBuilder
         self.task = task.value
         if target_source not in self._VALID_TARGET_SOURCES:
             raise ValueError(
@@ -186,10 +193,10 @@ class LOBSTERTimeSeriesDataset(object):
         self.prefer_val_split = prefer_val_split
 
         if build_if_missing and not self._has_processed_files():
-            builder = LOBSTERDataBuilder(**(builder_kwargs or {}))
+            builder = self._builder_cls(**(builder_kwargs or {}))
             builder.build_dataset(self.root_path)
 
-        self.datasets = LOBSTERDataBuilder.load_processed_data(self.root_path)
+        self.datasets = self._builder_cls.load_processed_data(self.root_path)
         if not self.datasets:
             raise FileNotFoundError(
                 f"未在 {self.root_path} 找到处理后的 LOBSTER 数据。"
