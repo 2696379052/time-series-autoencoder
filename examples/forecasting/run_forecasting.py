@@ -13,6 +13,8 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def run(cfg):
     ts = instantiate(cfg.data)
     train_iter, test_iter, nb_features = ts.get_loaders()
+    if hasattr(ts, "target_size") and ts.target_size:
+        cfg.training.output_size = ts.target_size
 
     model = AutoEncForecast(cfg.training, input_size=nb_features).to(device)
     criterion = nn.MSELoss()
