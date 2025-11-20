@@ -2,17 +2,23 @@ data:
   _target_: tsa.dataset.LOBSTERTimeSeriesDataset
   task:
     _target_: tsa.dataset.Tasks
-    value: reconstruction
-  data_path: "../data/lobster"
-  batch_size: 16
+    value: prediction  # 改为预测任务
+  data_path: "../../data"  # 修正数据路径
+  batch_size: 32
   seq_length: 64
   prediction_window: 1
-  target_source: features
-  message_columns: null
-  orderbook_columns: null
-  build_if_missing: false
+  target_source: labels  # 使用标签作为预测目标
+  label_type: long  # 可选: long 或 short
+  message_columns: null  # null表示使用所有message列
+  orderbook_columns: null  # null表示使用所有orderbook列
+  build_if_missing: true  # 如果数据未处理，自动构建
   builder_kwargs:
     data_dir_name: "GC"
+    split_rates: [0.6, 0.2, 0.2]  # train/val/test划分比例
+    stop_loss_ticks: 6
+    take_profit_ratio: 1.5
+    tick_size: 0.1
+    max_steps: 64
   prefer_val_split: true
   shuffle_train: false
 

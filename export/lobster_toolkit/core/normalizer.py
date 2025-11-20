@@ -55,6 +55,18 @@ class ZScoreNormalizer:
                 'std': float(all_messages[col].std(ddof=0))
             }
         
+        # 额外保存 price 列的全局标准差（用于窗口归一化）
+        if 'price' in data_items[0]['message'].columns:
+            all_prices = pd.concat(
+                [item['message']['price'] for item in data_items],
+                ignore_index=True,
+                copy=False
+            )
+            self.stats['message']['price'] = {
+                'mean': float(all_prices.mean()),
+                'std': float(all_prices.std(ddof=0))
+            }
+        
         # 收集所有 orderbook 数据
         if orderbook_cols is None:
             # 默认归一化所有 size 列
@@ -98,10 +110,10 @@ class ZScoreNormalizer:
         for item in data_items:
             normalized_item = item.copy()
             
-            # 归一化 message
+            # 归一化 message（跳过 price 列，留待窗口归一化）
             msg_df = item['message'].copy()
             for col, params in self.stats['message'].items():
-                if col in msg_df.columns:
+                if col in msg_df.columns and col != 'price':  # 跳过 price
                     mean = params['mean']
                     std = params['std'] if params['std'] > eps else 1.0
                     msg_df[col] = ((msg_df[col] - mean) / std).astype(np.float32)

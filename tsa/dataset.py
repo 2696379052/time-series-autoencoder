@@ -202,6 +202,20 @@ class LOBSTERTimeSeriesDataset(object):
                 f"未在 {self.root_path} 找到处理后的 LOBSTER 数据。"
                 "请先运行 LOBSTERDataBuilder.build_dataset 或设置 build_if_missing=True。"
             )
+        
+        # 加载价格列的全局标准差（用于窗口归一化）
+        self.price_global_std = None
+        norm_params_path = os.path.join(self.root_path, "norm_params.csv")
+        if os.path.exists(norm_params_path):
+            try:
+                from export.lobster_toolkit.core.normalizer import ZScoreNormalizer
+                normalizer = ZScoreNormalizer.load_params(norm_params_path)
+                params = normalizer.get_params()
+                if 'message' in params and 'price' in params['message']:
+                    self.price_global_std = params['message']['price']['std']
+                    print(f"✓ 加载 price 全局标准差: {self.price_global_std:.6f}")
+            except Exception as e:
+                print(f"⚠️  无法加载价格全局标准差: {e}")
 
     def _has_processed_files(self) -> bool:
         return os.path.exists(os.path.join(self.root_path, "train.pkl"))
@@ -256,11 +270,23 @@ class LOBSTERTimeSeriesDataset(object):
             raise KeyError(f"以下列在数据集中不存在: {sorted(missing)}")
         return df[wanted]
 
-    def _combine_features(self, item: Dict[str, Any]) -> np.ndarray:
+    def _combine_features(self, item: Dict[str, Any]) -> Tuple[np.ndarray, Optional[int]]:
+        """组合特征并返回 price 列的索引
+        
+        Returns:
+            (features_array, price_column_index)
+            price_column_index: message.price 在组合后特征中的列索引，如果不存在则为 None
+        """
         message_df = self._select_columns(item["message"], self.message_columns)
         orderbook_df = self._select_columns(item["orderbook"], self.orderbook_columns)
         combined = pd.concat([message_df, orderbook_df], axis=1)
-        return combined.to_numpy(dtype=np.float32)
+        
+        # 查找 price 列在组合后的索引
+        price_idx = None
+        if 'price' in message_df.columns:
+            price_idx = list(combined.columns).index('price')
+        
+        return combined.to_numpy(dtype=np.float32), price_idx
 
     def _get_target_series(self, item: Dict[str, Any], features: np.ndarray) -> np.ndarray:
         if self.target_source == "features":
@@ -283,7 +309,7 @@ class LOBSTERTimeSeriesDataset(object):
         target_batches: List[torch.Tensor] = []
 
         for item in items:
-            features = self._combine_features(item)
+            features, price_idx = self._combine_features(item)
             targets = self._get_target_series(item, features)
 
             seq_source = targets if self.task == Tasks.prediction.value else features
@@ -300,8 +326,15 @@ class LOBSTERTimeSeriesDataset(object):
             for start in range(1, max_index + 1):
                 end = start + self.seq_length
 
-                feature_window = torch.from_numpy(features[start:end]).float()
-                features_batches.append(feature_window.unsqueeze(0))
+                feature_window = features[start:end].copy()  # 使用 copy 避免修改原数据
+                
+                # 对 message.price 列应用窗口均值 + 全局标准差归一化
+                if price_idx is not None and self.price_global_std is not None:
+                    window_prices = feature_window[:, price_idx]
+                    window_mean = window_prices.mean()
+                    feature_window[:, price_idx] = (window_prices - window_mean) / (self.price_global_std + 1e-8)
+                
+                features_batches.append(torch.from_numpy(feature_window).float().unsqueeze(0))
 
                 y_hist_window = torch.from_numpy(seq_source[start - 1:end - 1]).float()
                 y_hist_batches.append(y_hist_window.unsqueeze(0))
