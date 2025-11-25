@@ -12,12 +12,17 @@
 
 ## 快速开始
 
-### 安装
+### 安装与环境
+
+本工具包随 `time-series-autoencoder-agent` 仓库一起分发，不再单独打包发布为独立 Python 包。通常只需在仓库根目录创建虚拟环境并安装项目依赖：
 
 ```bash
-cd export
-pip install -e .
+# 在仓库根目录
+uv venv               # 或 python -m venv .venv
+uv pip sync pyproject.toml  # 或 pip install -r requirements.txt
 ```
+
+在仓库根目录下运行示例脚本或测试时，可以直接 `import lobster_toolkit`。
 
 ### 基础使用
 
@@ -113,19 +118,27 @@ labels = strategy.generate(message_df, orderbook_df)
 ## 项目结构
 
 ```
-export/
-├── lobster_toolkit/
-│   ├── core/               # 核心模块（无框架依赖）
-│   │   ├── builder.py      # 数据构建器
-│   │   ├── preprocessor.py # 预处理器
-│   │   ├── labeler.py      # 标签生成器
-│   │   └── normalizer.py   # 归一化工具
-│   ├── loaders/            # 数据加载器
-│   │   └── pytorch.py      # PyTorch DataLoader
-│   └── adapters/           # 框架适配器
-│       └── aeon.py         # aeon 适配器
-├── examples/               # 使用示例
-└── setup.py               # 安装配置
+ time-series-autoencoder-agent/
+├── lobster_toolkit/           # LOBSTER 工具包源码
+│   ├── __init__.py           # 顶层 API
+│   ├── core/                 # 核心模块（无框架依赖）
+│   │   ├── builder.py        # 数据构建器
+│   │   ├── preprocessor.py   # 预处理器
+│   │   ├── labeler.py        # 标签生成器
+│   │   └── normalizer.py     # 归一化工具
+│   ├── loaders/              # 数据加载器
+│   │   └── pytorch.py        # PyTorch DataLoader
+│   └── adapters/             # 框架适配器
+│       └── aeon.py           # aeon 适配器
+├── examples/
+│   └── lobster_toolkit/      # 使用示例脚本
+├── tests/                    # 与工具包相关的测试
+│   ├── test_toolkit_basic.py
+│   └── test_lobster_pipeline.py
+├── docs/
+│   ├── TOOLKIT_README.md
+│   └── QUICKSTART_TOOLKIT.md
+└── pyproject.toml            # 整体项目的打包与依赖配置
 ```
 
 ## API 文档

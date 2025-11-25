@@ -2,9 +2,12 @@
 
 ## 安装
 
+本工具包作为 `time-series-autoencoder-agent` 仓库的一部分分发，不再单独打包发布。通常只需在仓库根目录创建虚拟环境并安装项目依赖：
+
 ```bash
-cd export
-pip install -e .
+# 在仓库根目录
+uv venv               # 或 python -m venv .venv
+uv pip sync pyproject.toml  # 或 pip install -r requirements.txt
 ```
 
 安装可选依赖：
@@ -142,35 +145,32 @@ normalized_items = normalizer.transform(data_items)
 ## 目录结构
 
 ```
-export/
-├── lobster_toolkit/        # 主包
-│   ├── __init__.py        # 顶层 API
-│   ├── core/              # 核心模块（无框架依赖）
-│   │   ├── builder.py     # 数据构建器
-│   │   ├── preprocessor.py # 预处理器
-│   │   ├── labeler.py     # 标签生成器
-│   │   └── normalizer.py  # 归一化工具
-│   ├── loaders/           # 数据加载器
-│   │   └── pytorch.py     # PyTorch 支持
-│   └── adapters/          # 框架适配器
-│       └── aeon.py        # aeon 支持
-├── examples/              # 使用示例
-│   ├── 01_basic_usage.py
-│   ├── 02_pytorch_loader.py
-│   ├── 03_aeon_adapter.py
-│   └── 04_custom_labeler.py
-├── tests/                 # 单元测试
-│   └── test_basic.py
-├── README.md             # 完整文档
-├── QUICKSTART.md         # 本文件
-├── setup.py              # 安装配置
-└── requirements.txt      # 依赖列表
+ time-series-autoencoder-agent/
+├── lobster_toolkit/           # 主包源码
+│   ├── __init__.py           # 顶层 API
+│   ├── core/                 # 核心模块（无框架依赖）
+│   ├── loaders/              # 数据加载器
+│   └── adapters/             # 框架适配器
+├── examples/
+│   └── lobster_toolkit/      # 使用示例脚本
+│       ├── 01_basic_usage.py
+│       ├── 02_pytorch_loader.py
+│       ├── 03_aeon_adapter.py
+│       └── 04_custom_labeler.py
+├── tests/                    # 与工具包相关的测试
+│   ├── test_toolkit_basic.py
+│   └── test_lobster_pipeline.py
+├── docs/
+│   ├── TOOLKIT_README.md     # 完整文档
+│   └── QUICKSTART_TOOLKIT.md # 本文件
+├── pyproject.toml            # 整体项目依赖配置
+└── requirements.txt          # 由 uv 生成的锁定依赖
 ```
 
 ## 运行示例
 
 ```bash
-cd export/examples
+cd examples/lobster_toolkit
 
 # 基础使用
 python 01_basic_usage.py
@@ -188,9 +188,8 @@ python 04_custom_labeler.py
 ## 运行测试
 
 ```bash
-cd export
-pip install -e .[dev]
-pytest tests/ -v
+# 在仓库根目录
+pytest tests -v
 ```
 
 ## 下一步
@@ -212,9 +211,11 @@ data/
 ```
 
 ### 问题：导入错误
-确保已安装：
+通常需要保证：
 ```bash
-pip install -e .
+# 1. 当前工作目录在仓库根目录
+# 2. 已安装项目依赖（例如）
+pip install -r requirements.txt
 ```
 
 ### 问题：PyTorch/aeon 不可用

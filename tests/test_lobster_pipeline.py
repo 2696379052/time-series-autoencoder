@@ -6,9 +6,10 @@ import time
 import traceback
 import numpy as np
 import pandas as pd
+import pytest
 
 # 添加 export 目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'export'))
+# sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'export'))
 
 from lobster_toolkit.core.preprocessor import MessagePreprocessor, OrderbookPreprocessor, preprocess_pair
 from lobster_toolkit.core.labeler import generate_dual_labels, StopLossLabelStrategy
@@ -322,6 +323,50 @@ def test_dataloader():
         print(f"✗ 错误: {e}")
         traceback.print_exc()
         return False
+
+
+# 将上面的分步函数标记为“帮助函数”，避免被 pytest 直接收集为测试
+test_file_discovery.__test__ = False
+test_data_loading.__test__ = False
+test_preprocessing.__test__ = False
+test_label_generation.__test__ = False
+test_normalization.__test__ = False
+test_full_pipeline.__test__ = False
+test_dataloader.__test__ = False
+
+
+@pytest.mark.integration
+def test_lobster_pipeline():
+    """使用完整流水线跑一遍 LOBSTER 处理，用于 pytest 集成测试。"""
+    # 测试1: 文件发现
+    success, file_pairs = test_file_discovery()
+    if not success:
+        pytest.skip("LOBSTER 文件发现失败，可能是 ./data 下没有可用文件对")
+
+    # 测试2: 数据加载
+    success, message_df, orderbook_df = test_data_loading(file_pairs)
+    assert success, "数据加载失败"
+
+    # 测试3: 预处理
+    success, msg_proc, ob_proc = test_preprocessing(message_df, orderbook_df)
+    assert success, "数据预处理失败"
+
+    # 测试4: 标签生成
+    success, labels_long, labels_short = test_label_generation(msg_proc, ob_proc)
+    assert success, "标签生成失败"
+    assert len(labels_long) == len(labels_short) > 0
+
+    # 测试5: 归一化
+    success = test_normalization(file_pairs)
+    assert success, "归一化流程失败"
+
+    # 测试6: 完整数据构建流程
+    success = test_full_pipeline()
+    assert success, "完整数据构建流程失败"
+
+    # 测试7: DataLoader
+    success = test_dataloader()
+    assert success, "DataLoader 构建或迭代失败"
 
 
 def main():

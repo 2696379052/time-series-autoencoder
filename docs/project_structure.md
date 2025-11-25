@@ -1,6 +1,6 @@
 # 项目结构概览
 
-本文档提供了 time-series autoencoder 项目的目录结构速览，帮助贡献者快速定位核心模块，并说明哪些组件来自外部依赖。
+本文档提供了 time-series autoencoder 项目的目录结构速览，帮助贡献者快速定位核心模块，并说明哪些组件来自外部项目。
 
 ## 顶层文件
 
@@ -18,13 +18,29 @@
 - `eval.py`：评估函数与推理辅助工具。
 - `utils.py`：通用工具函数集合。
 
+## LOBSTER 工具包：`lobster_toolkit/`
+
+- `lobster_toolkit/core/`：核心数据处理模块（预处理、打标、归一化等），与深度学习框架解耦。
+- `lobster_toolkit/loaders/`：针对 PyTorch 等框架的数据加载器封装。
+- `lobster_toolkit/adapters/`：与 aeon 等时间序列框架的适配层。
+
+该工具包源自外部项目，但已经直接集成到本仓库中，用于为 `tsa` 提供 LOBSTER 数据预处理与标签生成能力。
+
 ## 示例
 
 完整的端到端示例位于 `examples/` 目录：
 
 - `examples/reconstruction/`：包含 `config.yaml` 与 `run_reconstruction.py`，演示重建任务实验。
 - `examples/forecasting/`：包含 `config.yaml` 与 `run_forecasting.py`，展示预测任务的配置与脚本。
+- `examples/lobster_toolkit/`：展示如何单独使用 `lobster_toolkit` 进行数据构建与模型训练。
 
-## 外部数据处理模块
+## 测试
 
-本仓库依赖来自外部项目的 `export/` 目录以提供部分数据处理功能。需要复现实验时，请从相应项目引入该目录或将其作为依赖添加。
+所有测试脚本集中在 `tests/` 目录：
+
+- `test_toolkit_basic.py`、`test_lobster_pipeline.py` 等用于验证 LOBSTER 工具包的核心功能与端到端流程。
+- `test_window_normalization.py` 用于验证 `lobster_toolkit` 与 `tsa.dataset` 之间的窗口归一化联动是否正确。
+
+## 外部来源说明
+
+`lobster_toolkit/` 源自外部项目（例如 aeon-remote），已经作为源码直接集成到本仓库中。用户不再需要单独引入 `export/` 目录或额外克隆外部仓库即可使用相关数据处理功能。

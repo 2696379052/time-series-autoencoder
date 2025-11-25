@@ -1,0 +1,52 @@
+data:
+  _target_: tsa.dataset.LOBSTERTimeSeriesDataset
+  task:
+    _target_: tsa.dataset.Tasks
+    value: prediction
+  data_path: data
+  batch_size: 32
+  seq_length: 64
+  prediction_window: 1
+  target_source: labels
+  label_type: long
+  message_columns: null
+  orderbook_columns: null
+  build_if_missing: true
+  builder_kwargs:
+    data_dir_name: GC
+    split_rates:
+    - 0.6
+    - 0.2
+    - 0.2
+    stop_loss_ticks: 6
+    take_profit_ratio: 1.5
+    tick_size: 0.1
+    max_steps: 64
+  prefer_val_split: true
+  shuffle_train: false
+training:
+  batch_size: ${data.batch_size}
+  denoising: false
+  directions: 1
+  gradient_accumulation_steps: 1
+  hidden_size_encoder: 64
+  hidden_size_decoder: 64
+  input_att: true
+  lr: 1.0e-05
+  lrs_step_size: 5000
+  max_grad_norm: 0.1
+  num_epochs: 100
+  output_size: 1
+  reg1: true
+  reg2: false
+  reg_factor1: 0.0001
+  reg_factor2: 0.0001
+  seq_len: ${data.seq_length}
+  temporal_att: true
+general:
+  do_eval: true
+  do_train: true
+  logging_steps: 100
+  output_dir: output
+  save_steps: 5000
+  eval_during_training: true

@@ -1,4 +1,4 @@
-# 开发依赖
+# 开发依赖（仅记录 lobster_toolkit 相关），不作为项目安装入口
 pytest>=7.0.0
 pytest-cov>=3.0.0
 black>=22.0.0

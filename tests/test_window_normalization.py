@@ -5,9 +5,9 @@ import sys
 import os
 
 # 添加 export 目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'export'))
+# sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'export'))
 
-from export.lobster_toolkit.core.builder import LOBSTERDataBuilder
+from lobster_toolkit.core.builder import LOBSTERDataBuilder
 
 
 def test_window_normalization():
@@ -38,7 +38,7 @@ def test_window_normalization():
     # 2. 加载归一化参数并检查 price 列
     print("\n步骤 2: 检查归一化参数")
     try:
-        from export.lobster_toolkit.core.normalizer import ZScoreNormalizer
+        from lobster_toolkit.core.normalizer import ZScoreNormalizer
         normalizer = ZScoreNormalizer.load_params(os.path.join(data_path, "norm_params.csv"))
         params = normalizer.get_params()
         

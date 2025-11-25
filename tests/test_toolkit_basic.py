@@ -53,9 +53,10 @@ class TestPreprocessor:
         # 创建测试数据
         data = {}
         for i in range(1, 11):
-            data[f'ask_price_{i}'] = [100000.0 + i*100]
+            data[f'ask_price_{i}'] = [100000.0 + i * 100]
             data[f'ask_size_{i}'] = [10.0 + i]
-            data[f'bid_price_{i}'] = [99900.0 - i*100]
+            # 最优买价应为 99900.0（缩放后 9.99），后续档位以 100 为步长递减
+            data[f'bid_price_{i}'] = [99900.0 - (i - 1) * 100]
             data[f'bid_size_{i}'] = [15.0 + i]
         
         df = pd.DataFrame(data)

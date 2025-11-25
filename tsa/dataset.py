@@ -161,10 +161,10 @@ class LOBSTERTimeSeriesDataset(object):
         prefer_val_split: bool = True,
     ) -> None:
         try:
-            from export.lobster_toolkit.core.builder import LOBSTERDataBuilder as _LOBSTERDataBuilder
+            from lobster_toolkit.core.builder import LOBSTERDataBuilder as _LOBSTERDataBuilder
         except ModuleNotFoundError as exc:
             raise ModuleNotFoundError(
-                "LOBSTERTimeSeriesDataset 需要可用的 export.lobster_toolkit 模块。"
+                "LOBSTERTimeSeriesDataset 需要可用的 lobster_toolkit 模块。"
                 "请在相关环境中安装或检出该项目后再使用此数据集。"
             ) from exc
 
@@ -208,7 +208,7 @@ class LOBSTERTimeSeriesDataset(object):
         norm_params_path = os.path.join(self.root_path, "norm_params.csv")
         if os.path.exists(norm_params_path):
             try:
-                from export.lobster_toolkit.core.normalizer import ZScoreNormalizer
+                from lobster_toolkit.core.normalizer import ZScoreNormalizer
                 normalizer = ZScoreNormalizer.load_params(norm_params_path)
                 params = normalizer.get_params()
                 if 'message' in params and 'price' in params['message']:

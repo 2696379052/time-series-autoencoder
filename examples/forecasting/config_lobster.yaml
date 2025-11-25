@@ -3,7 +3,8 @@ data:
   task:
     _target_: tsa.dataset.Tasks
     value: prediction  # 改为预测任务
-  data_path: "../../data"  # 修正数据路径
+  # 相对于项目根目录的 data 目录，由 Hydra 的 to_absolute_path 解析
+  data_path: "data"
   batch_size: 32
   seq_length: 64
   prediction_window: 1
@@ -48,4 +49,5 @@ general:
   logging_steps: 100
   output_dir: "output"
   save_steps: 5000
-  eval_during_training: True
+  # 关闭训练过程中的频繁评估，只在训练结束后做一次完整评估
+  eval_during_training: False

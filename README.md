@@ -111,7 +111,7 @@ Optional arguments:
 * 代码主体位于 `tsa/` 包中，其中 `model.py` 定义了编码器、解码器以及整体的自编码器模型，`train.py`、`eval.py` 与 `dataset.py` 分别负责训练流程、评估逻辑和数据读取。
 * 示例脚本放在 `examples/` 目录下，`forecasting/` 与 `reconstruction/` 子目录提供了基于 Hydra 的配置文件及运行入口，可直接复现实验。
 * 根目录中的 `autoenc_architecture.png` 对模型结构进行了可视化说明，`pyproject.toml` 与 `requirements.txt` 列出了依赖。
-* 若要接入 `export/` 目录中的数据预处理模块，请注意该目录并未包含在本仓库中，需要从原项目单独引入。
+* 若要接入 `lobster_toolkit/` 中的 LOBSTER 数据预处理模块，可以直接在本仓库中 `import lobster_toolkit` 使用，对应示例位于 `examples/lobster_toolkit/`。
 
 ## 模型结构详解（中文）
 
