@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 from torch import nn
-from torch.autograd import Variable
 from torch.nn import functional as tf
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -9,17 +8,18 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def init_hidden(x: torch.Tensor, hidden_size: int, num_dir: int = 1, xavier: bool = True):
     """
-    Initialize hidden.
+    Initialize hidden state tensor directly on the target device.
 
     Args:
-        x: (torch.Tensor): input tensor
-        hidden_size: (int):
+        x: (torch.Tensor): input tensor (used for batch size and device)
+        hidden_size: (int): hidden state size
         num_dir: (int): number of directions in LSTM
-        xavier: (bool): wether or not use xavier initialization
+        xavier: (bool): whether to use xavier initialization
     """
+    h = torch.zeros(num_dir, x.size(0), hidden_size, device=x.device)
     if xavier:
-        return nn.init.xavier_normal_(torch.zeros(num_dir, x.size(0), hidden_size)).to(device)
-    return Variable(torch.zeros(num_dir, x.size(0), hidden_size)).to(device)
+        nn.init.xavier_normal_(h)
+    return h
 
 
 ###########################################################################
@@ -46,11 +46,15 @@ class Encoder(nn.Module):
         Run forward computation.
 
         Args:
-            input_data: (torch.Tensor): tensor of input daa
+            input_data: (torch.Tensor): tensor of input data
         """
         h_t, c_t = (init_hidden(input_data, self.hidden_size),
                     init_hidden(input_data, self.hidden_size))
-        input_encoded = Variable(torch.zeros(input_data.size(0), self.seq_len, self.hidden_size))
+        # 预分配输出 tensor 在正确的 device 上
+        input_encoded = torch.zeros(
+            input_data.size(0), self.seq_len, self.hidden_size, 
+            device=input_data.device
+        )
 
         for t in range(self.seq_len):
             _, (h_t, c_t) = self.lstm(input_data[:, t, :].unsqueeze(0), (h_t, c_t))
@@ -87,45 +91,52 @@ class AttnEncoder(nn.Module):
     @staticmethod
     def _get_noise(input_data: torch.Tensor, sigma=0.01, p=0.1):
         """
-        Get noise.
+        Get noise directly on the input device.
 
         Args:
             input_data: (torch.Tensor): tensor of input data
             sigma: (float): variance of the generated noise
             p: (float): probability to add noise
         """
-        normal = sigma * torch.randn(input_data.shape)
-        mask = np.random.uniform(size=(input_data.shape))
-        mask = (mask < p).astype(int)
-        noise = normal * torch.tensor(mask)
-        return noise
+        normal = sigma * torch.randn(input_data.shape, device=input_data.device)
+        mask = torch.rand(input_data.shape, device=input_data.device) < p
+        return normal * mask.float()
 
     def forward(self, input_data: torch.Tensor):
         """
-        Forward computation.
+        Forward computation with optimized device handling.
 
         Args:
             input_data: (torch.Tensor): tensor of input data
         """
+        batch_size = input_data.size(0)
+        dev = input_data.device
+        
         h_t, c_t = (init_hidden(input_data, self.hidden_size, num_dir=self.directions),
                     init_hidden(input_data, self.hidden_size, num_dir=self.directions))
 
-        attentions, input_encoded = (Variable(torch.zeros(input_data.size(0), self.seq_len, self.input_size)),
-                                     Variable(torch.zeros(input_data.size(0), self.seq_len, self.hidden_size)))
+        # 预分配输出 tensor 在正确的 device 上
+        attentions = torch.zeros(batch_size, self.seq_len, self.input_size, device=dev)
+        input_encoded = torch.zeros(batch_size, self.seq_len, self.hidden_size, device=dev)
 
         if self.add_noise and self.training:
-            input_data += self._get_noise(input_data).to(device)
+            input_data = input_data + self._get_noise(input_data)
+
+        # 预计算 input_data 的转置（避免循环内重复计算）
+        input_permuted = input_data.permute(0, 2, 1)  # (batch, input_size, seq_len)
 
         for t in range(self.seq_len):
-            x = torch.cat((h_t.repeat(self.input_size, 1, 1).permute(1, 0, 2),
-                           c_t.repeat(self.input_size, 1, 1).permute(1, 0, 2),
-                           input_data.permute(0, 2, 1).to(device)), dim=2).to(
-                device)  # bs * input_size * (2 * hidden_dim + seq_len)
+            # 拼接 attention 输入（所有数据已在同一 device）
+            x = torch.cat((
+                h_t.repeat(self.input_size, 1, 1).permute(1, 0, 2),
+                c_t.repeat(self.input_size, 1, 1).permute(1, 0, 2),
+                input_permuted
+            ), dim=2)  # bs * input_size * (2 * hidden_dim + seq_len)
 
             e_t = self.attn(x.view(-1, self.hidden_size * 2 + self.seq_len))  # (bs * input_size) * 1
-            a_t = self.softmax(e_t.view(-1, self.input_size)).to(device)  # (bs, input_size)
+            a_t = self.softmax(e_t.view(-1, self.input_size))  # (bs, input_size)
 
-            weighted_input = torch.mul(a_t, input_data[:, t, :].to(device))  # (bs * input_size)
+            weighted_input = a_t * input_data[:, t, :]  # (bs, input_size)
             self.lstm.flatten_parameters()
             _, (h_t, c_t) = self.lstm(weighted_input.unsqueeze(0), (h_t, c_t))
 
@@ -158,7 +169,7 @@ class Decoder(nn.Module):
         Forward pass
 
         Args:
-            _:
+            _: unused encoder output
             y_hist: (torch.Tensor): shifted target
         """
         h_t, c_t = (init_hidden(y_hist, self.hidden_size),
@@ -196,36 +207,44 @@ class AttnDecoder(nn.Module):
 
     def forward(self, input_encoded: torch.Tensor, y_history: torch.Tensor):
         """
-        Perform forward computation.
+        Perform forward computation with optimized device handling.
 
         Args:
             input_encoded: (torch.Tensor): tensor of encoded input
             y_history: (torch.Tensor): shifted target
         """
+        batch_size = input_encoded.size(0)
+        dev = input_encoded.device
+        
         h_t, c_t = (
-            init_hidden(input_encoded, self.decoder_hidden_size), init_hidden(input_encoded, self.decoder_hidden_size))
-        context = Variable(torch.zeros(input_encoded.size(0), self.encoder_hidden_size))
+            init_hidden(input_encoded, self.decoder_hidden_size),
+            init_hidden(input_encoded, self.decoder_hidden_size)
+        )
+        context = torch.zeros(batch_size, self.encoder_hidden_size, device=dev)
 
         for t in range(self.seq_len):
-            x = torch.cat((h_t.repeat(self.seq_len, 1, 1).permute(1, 0, 2),
-                           c_t.repeat(self.seq_len, 1, 1).permute(1, 0, 2),
-                           input_encoded.to(device)), dim=2)
+            # 所有数据已在同一 device，无需循环内调用 .to(device)
+            x = torch.cat((
+                h_t.repeat(self.seq_len, 1, 1).permute(1, 0, 2),
+                c_t.repeat(self.seq_len, 1, 1).permute(1, 0, 2),
+                input_encoded
+            ), dim=2)
 
             x = tf.softmax(
                 self.attn(
                     x.view(-1, 2 * self.decoder_hidden_size + self.encoder_hidden_size)
                 ).view(-1, self.seq_len),
-                dim=1)
+                dim=1
+            )
 
-            context = torch.bmm(x.unsqueeze(1), input_encoded.to(device))[:, 0, :]  # (batch_size, encoder_hidden_size)
+            context = torch.bmm(x.unsqueeze(1), input_encoded)[:, 0, :]  # (batch_size, encoder_hidden_size)
 
-            y_tilde = self.fc(torch.cat((context.to(device), y_history[:, t].to(device)),
-                                        dim=1))  # (batch_size, out_size)
+            y_tilde = self.fc(torch.cat((context, y_history[:, t]), dim=1))  # (batch_size, out_size)
 
             self.lstm.flatten_parameters()
             _, (h_t, c_t) = self.lstm(y_tilde.unsqueeze(0), (h_t, c_t))
 
-        return self.fc_out(torch.cat((h_t[0], context.to(device)), dim=1))  # predicting value at t=self.seq_length+1
+        return self.fc_out(torch.cat((h_t[0], context), dim=1))  # predicting value at t=self.seq_length+1
 
 
 class AutoEncForecast(nn.Module):

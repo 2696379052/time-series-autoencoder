@@ -22,6 +22,10 @@ data:
     max_steps: 64
   prefer_val_split: true
   shuffle_train: false
+  # DataLoader 性能参数 (Windows 上 num_workers > 0 需要 if __name__ == '__main__' 保护)
+  num_workers: 0  # 设置为 2-4 可提升数据加载速度
+  pin_memory: true  # GPU 训练时加速内存传输
+  persistent_workers: false  # num_workers > 0 时可设为 true
 
 training:
   batch_size: ${data.batch_size}
@@ -42,6 +46,7 @@ training:
   reg_factor2: 1e-4
   seq_len: ${data.seq_length}
   temporal_att: True
+  use_amp: false  # 混合精度训练 (GPU 训练时可设为 true 提升 30-50% 速度)
 
 general:
   do_eval: True

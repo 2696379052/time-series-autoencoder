@@ -1,6 +1,7 @@
 import os
 
 import torch
+from torch.cuda.amp import autocast, GradScaler
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
@@ -37,31 +38,53 @@ def train(train_iter, test_iter, model, criterion, optimizer, config, ts):
     best_epoch = -1
     best_ckpt_path = os.path.join(config.general.output_dir, "checkpoint-best.ckpt")
 
+    # 预计算正则化参数列表（避免每 batch 重复筛选）
+    reg_params = None
+    if config.training.reg1 or config.training.reg2:
+        reg_params = [p for name, p in model.named_parameters() if "bias" not in name]
+
+    # 混合精度训练设置
+    use_amp = getattr(config.training, "use_amp", False) and device.type == "cuda"
+    scaler = GradScaler(enabled=use_amp)
+    if use_amp:
+        print("✓ 启用混合精度训练 (AMP)")
+
     for epoch in tqdm(range(config.training.num_epochs), unit="epoch"):
+        model.train()  # 每个 epoch 开始时设置一次
+        
         for i, batch in tqdm(enumerate(train_iter), total=len(train_iter), unit="batch"):
-            model.train()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)  # 更高效的梯度清零
 
             feature, y_hist, target = batch
-            output = model(feature.to(device), y_hist.to(device))
-            loss = criterion(output.to(device), target.to(device))
+            feature = feature.to(device)
+            y_hist = y_hist.to(device)
+            target = target.to(device)
 
-            if config.training.reg1:
-                params = torch.cat([p.view(-1) for name, p in model.named_parameters() if "bias" not in name])
-                loss += config.training.reg_factor1 * torch.norm(params, 1)
-            if config.training.reg2:
-                params = torch.cat([p.view(-1) for name, p in model.named_parameters() if "bias" not in name])
-                loss += config.training.reg_factor2 * torch.norm(params, 2)
+            # 混合精度前向传播
+            with autocast(enabled=use_amp):
+                output = model(feature, y_hist)
+                loss = criterion(output, target)
 
-            if config.training.gradient_accumulation_steps > 1:
-                loss = loss / config.training.gradient_accumulation_steps
+                # 使用预计算的参数列表计算正则化
+                if config.training.reg1 and reg_params:
+                    params_flat = torch.cat([p.view(-1) for p in reg_params])
+                    loss = loss + config.training.reg_factor1 * torch.norm(params_flat, 1)
+                if config.training.reg2 and reg_params:
+                    params_flat = torch.cat([p.view(-1) for p in reg_params])
+                    loss = loss + config.training.reg_factor2 * torch.norm(params_flat, 2)
 
-            loss.backward()
+                if config.training.gradient_accumulation_steps > 1:
+                    loss = loss / config.training.gradient_accumulation_steps
+
+            # 混合精度反向传播
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.training.max_grad_norm)
             train_loss += loss.item()
 
             if (i + 1) % config.training.gradient_accumulation_steps == 0:
-                optimizer.step()
+                scaler.step(optimizer)
+                scaler.update()
                 scheduler.step()
                 global_step += 1
 

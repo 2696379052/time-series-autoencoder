@@ -159,6 +159,9 @@ class LOBSTERTimeSeriesDataset(object):
         label_type: str = "long",
         shuffle_train: bool = False,
         prefer_val_split: bool = True,
+        num_workers: int = 0,
+        pin_memory: bool = False,
+        persistent_workers: bool = False,
     ) -> None:
         try:
             from lobster_toolkit.core.builder import LOBSTERDataBuilder as _LOBSTERDataBuilder
@@ -191,6 +194,10 @@ class LOBSTERTimeSeriesDataset(object):
         self.label_type = label_type
         self.shuffle_train = shuffle_train
         self.prefer_val_split = prefer_val_split
+        # DataLoader 性能参数
+        self.num_workers = num_workers
+        self.pin_memory = pin_memory
+        self.persistent_workers = persistent_workers and num_workers > 0
 
         if build_if_missing and not self._has_processed_files():
             builder = self._builder_cls(**(builder_kwargs or {}))
@@ -248,17 +255,27 @@ class LOBSTERTimeSeriesDataset(object):
     def get_loaders(self) -> Tuple[DataLoader, DataLoader, int]:
         train_dataset, test_dataset, nb_features = self.preprocess_data()
 
+        # DataLoader 通用参数
+        loader_kwargs = {
+            "num_workers": self.num_workers,
+            "pin_memory": self.pin_memory,
+        }
+        if self.persistent_workers:
+            loader_kwargs["persistent_workers"] = True
+
         train_iter = DataLoader(
             train_dataset,
             batch_size=self.batch_size,
             shuffle=self.shuffle_train,
             drop_last=True,
+            **loader_kwargs,
         )
         test_iter = DataLoader(
             test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             drop_last=True,
+            **loader_kwargs,
         )
         return train_iter, test_iter, nb_features
 
@@ -304,9 +321,10 @@ class LOBSTERTimeSeriesDataset(object):
         return target[:, None] if target.ndim == 1 else target
 
     def _frame_split(self, items: List[Dict[str, Any]]) -> TensorDataset:
-        features_batches: List[torch.Tensor] = []
-        y_hist_batches: List[torch.Tensor] = []
-        target_batches: List[torch.Tensor] = []
+        """向量化版本的窗口提取，避免 Python 循环"""
+        all_features = []
+        all_y_hist = []
+        all_targets = []
 
         for item in items:
             features, price_idx = self._combine_features(item)
@@ -323,32 +341,45 @@ class LOBSTERTimeSeriesDataset(object):
             targets = targets[:length]
             seq_source = seq_source[:length]
 
-            for start in range(1, max_index + 1):
-                end = start + self.seq_length
+            # 向量化窗口提取：使用 stride_tricks 创建滑动窗口视图
+            num_windows = max_index  # 窗口数量
+            
+            # 创建特征窗口索引 (num_windows, seq_length)
+            starts = np.arange(1, max_index + 1)
+            indices = starts[:, None] + np.arange(self.seq_length)
+            
+            # 批量提取特征窗口 (num_windows, seq_length, num_features)
+            feature_windows = features[indices].copy()
+            
+            # 向量化价格归一化
+            if price_idx is not None and self.price_global_std is not None:
+                # 计算每个窗口的价格均值 (num_windows,)
+                window_prices = feature_windows[:, :, price_idx]
+                window_means = window_prices.mean(axis=1, keepdims=True)
+                # 批量归一化
+                feature_windows[:, :, price_idx] = (window_prices - window_means) / (self.price_global_std + 1e-8)
+            
+            # 提取 y_hist 窗口 (num_windows, seq_length, ...)
+            y_hist_indices = (starts - 1)[:, None] + np.arange(self.seq_length)
+            y_hist_windows = seq_source[y_hist_indices]
+            
+            # 提取目标 (num_windows, prediction_window, ...)
+            target_indices = (starts + self.seq_length)[:, None] + np.arange(self.prediction_window)
+            target_windows = targets[target_indices]
+            
+            all_features.append(feature_windows)
+            all_y_hist.append(y_hist_windows)
+            all_targets.append(target_windows)
 
-                feature_window = features[start:end].copy()  # 使用 copy 避免修改原数据
-                
-                # 对 message.price 列应用窗口均值 + 全局标准差归一化
-                if price_idx is not None and self.price_global_std is not None:
-                    window_prices = feature_window[:, price_idx]
-                    window_mean = window_prices.mean()
-                    feature_window[:, price_idx] = (window_prices - window_mean) / (self.price_global_std + 1e-8)
-                
-                features_batches.append(torch.from_numpy(feature_window).float().unsqueeze(0))
-
-                y_hist_window = torch.from_numpy(seq_source[start - 1:end - 1]).float()
-                y_hist_batches.append(y_hist_window.unsqueeze(0))
-
-                target_slice = torch.from_numpy(targets[end : end + self.prediction_window]).float()
-                target_batches.append(target_slice)
-
-        if not features_batches:
+        if not all_features:
             raise ValueError("给定的数据不足以构建任何序列，请检查 seq_length 或数据量")
 
-        features_var = torch.cat(features_batches)
-        y_hist_var = torch.cat(y_hist_batches)
-        target_tensor = torch.stack(target_batches, dim=0)
-        target_var = target_tensor.view(target_tensor.size(0), -1)
+        # 一次性合并所有数据并转换为 tensor
+        features_var = torch.from_numpy(np.concatenate(all_features, axis=0)).float()
+        y_hist_var = torch.from_numpy(np.concatenate(all_y_hist, axis=0)).float()
+        target_arr = np.concatenate(all_targets, axis=0)
+        target_var = torch.from_numpy(target_arr.reshape(target_arr.shape[0], -1)).float()
+        
         if not hasattr(self, "_target_size"):
             self._target_size = target_var.shape[-1]
 
